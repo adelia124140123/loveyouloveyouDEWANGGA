@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Love Heart</title>
+<style>
+  :root { --bg: #060208; --red: #c8102e; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: Arial, "Noto Sans", sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+
+  /* ===== Layar pembuka ===== */
+  #start {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 18px; text-align: center; padding: 24px;
+    background: radial-gradient(circle at 50% 40%, #2a0612 0%, var(--bg) 70%);
+    transition: opacity 1s ease;
+  }
+  #start.hide { opacity: 0; pointer-events: none; }
+  #start .icon {
+    font-size: 64px; color: var(--red);
+    animation: beat 1.2s ease-in-out infinite;
+  }
+  #start h1 { margin: 0; font-size: 22px; font-weight: 600; color: #ffd9de; }
+  #start p  { margin: 0; font-size: 14px; color: #a98088; }
+  #btn {
+    margin-top: 6px;
+    font: 600 17px Arial, sans-serif;
+    color: #fff; background: var(--red);
+    border: 0; border-radius: 999px;
+    padding: 14px 36px; cursor: pointer;
+    box-shadow: 0 0 24px rgba(200, 16, 46, 0.55);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  #btn:hover  { transform: scale(1.06); box-shadow: 0 0 34px rgba(200, 16, 46, 0.8); }
+  #btn:active { transform: scale(0.97); }
+
+  @keyframes beat {
+    0%, 100% { transform: scale(1); }
+    15%      { transform: scale(1.18); }
+    30%      { transform: scale(1); }
+    45%      { transform: scale(1.12); }
+  }
+
+  /* ===== Tombol mute ===== */
+  #mute {
+    position: fixed; z-index: 5;
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    right: 14px;
+    width: 42px; height: 42px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff; font-size: 18px; cursor: pointer;
+    opacity: 0; pointer-events: none;
+    transition: opacity 1s ease 1s;
+  }
+  #mute.show { opacity: 1; pointer-events: auto; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="start">
+  <div class="icon">♥</div>
+  <h1>Ada yang spesial nih buat kamu sayang</h1>
+  <p>Volumenya nyalain yh ganteng 🔊</p>
+  <button id="btn">Buka</button>
+</div>
+
+<button id="mute" aria-label="Mute atau unmute">🔊</button>
+<audio id="bgm" src="loveyouloveyou.mp3" loop preload="auto"></audio>
+
+<script>
+// ============ KONFIGURASI ============
+const SC = 21, OY = 20, DURATION = 10, TICK = 16, ANIM = 42, LIFT = 34, GAP = 7;
+const SIZES = [9, 10, 11, 12];
+const FONT = 'Arial, "Noto Sans", sans-serif';
+const BG = "#060208";
+const PT = 4 / 3; // point (tkinter) -> pixel (browser)
+
+const PHRASES = [
+  "I love you Dewangga", "Seni seviyorum Dewangga", "Te amo Dewangga", "Je t'aime Dewangga",
+  "Ich liebe dich Dewangga", "Ti amo Dewangga", "Eu te amo Dewangga", "Я тебя люблю Dewangga",
+  "사랑해 데왕가", "愛してる デワンガ", "我爱你 德旺加", "मैं तुमसे प्यार करता हूँ देवांग्गा",
+  "Σ' αγαπώ Ντεβάνγκα", "Ik hou van jou Dewangga", "Jag älskar dig Dewangga", "Kocham cię Dewangga",
+  "ฉันรักเธอ เดวังกา", "Anh yêu em Dewangga", "Aku cinta kamu Dewangga", "Я тебе кохаю Девангга",
+];
+
+// ============ ELEMEN ============
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+const buf = document.createElement("canvas");   // layer teks yang sudah selesai
+const bctx = buf.getContext("2d");
+const audio = document.getElementById("bgm");
+const startEl = document.getElementById("start");
+const muteBtn = document.getElementById("mute");
+let W, H, dpr, k;
+
+// ============ RANDOM BER-SEED ============
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(11);
+const uniform = (a, b) => a + (b - a) * rand();
+const choice = (arr) => arr[Math.floor(rand() * arr.length)];
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+}
+
+// ============ WARNA ============
+const clamp = (v) => Math.max(0, Math.min(1, v));
+const hx = (c) => "#" + c.map((v) => Math.round(clamp(v) * 255).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, t) => a.map((p, i) => p + (b[i] - p) * t);
+const dim = (c, t) => c.map((v) => v * t);
+const BGC = [1, 3, 5].map((i) => parseInt(BG.slice(i, i + 2), 16) / 255);
+const FLASH = [1.0, 0.78, 0.78];
+
+// ============ BENTUK HATI ============
+function heart(a) {
+  const x = 16 * Math.sin(a) ** 3;
+  const y = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+  return [x * SC, y * SC + OY];
+}
+const POLY = Array.from({ length: 720 }, (_, i) => heart((2 * Math.PI * i) / 720));
+const EDGES = POLY.map((p, i) => [p, POLY[(i + 1) % POLY.length]]);
+const YMAX = Math.max(...POLY.map((p) => p[1]));
+const YMIN = Math.min(...POLY.map((p) => p[1]));
+const CY = (YMAX + YMIN) / 2;
+
+function spans(y) {
+  const xs = [];
+  for (const [[x1, y1], [x2, y2]] of EDGES) {
+    if ((y1 <= y && y < y2) || (y2 <= y && y < y1)) {
+      xs.push(x1 + ((y - y1) * (x2 - x1)) / (y2 - y1));
+    }
+  }
+  xs.sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i + 1]]);
+  return out;
+}
+function intersect(A, B) {
+  const out = [];
+  for (const a of A) for (const b of B) {
+    const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+    if (hi - lo > 14) out.push([lo, hi]);
+  }
+  return out;
+}
+
+// ============ UKUR TEKS ============
+const wCache = {};
+function measure(text, size) {
+  const key = size + "|" + text;
+  if (!(key in wCache)) {
+    ctx.font = `bold ${size * PT}px ${FONT}`;
+    wCache[key] = ctx.measureText(text).width;
+  }
+  return wCache[key];
+}
+
+function* phraseCycle() {
+  while (true) {
+    const order = PHRASES.slice();
+    shuffle(order);
+    yield* order;
+  }
+}
+const mathDist = (x, y) => Math.hypot(x / (16 * SC), (y - CY) / (14.5 * SC));
+
+// ============ SUSUN TEKS DI DALAM HATI ============
+function build() {
+  const cycle = phraseCycle();
+  const rowH = Math.max(...SIZES.map((z) => z * PT * 1.15)) + 4;
+  const half = rowH / 2;
+  const placed = [];
+
+  for (let y = YMAX - half; y > YMIN + half; y -= rowH) {
+    const row = intersect(spans(y + half), spans(y - half));
+    for (let [lo, hi] of row) {
+      lo += 4; hi -= 4;
+      let cur = lo + uniform(0, 8);
+      const line = [];
+      while (true) {
+        let fit = null;
+        for (let n = 0; n < 10; n++) {
+          const text = cycle.next().value;
+          const size = choice(SIZES);
+          const w = measure(text, size);
+          if (cur + w <= hi) { fit = { text, size, w }; break; }
+        }
+        if (!fit) break;
+        line.push([cur + fit.w / 2, fit.text, fit.size, fit.w]);
+        cur += fit.w + GAP;
+      }
+      if (!line.length) continue;
+      if (line.length > 1) {
+        const last = line[line.length - 1];
+        const left = hi - (last[0] + last[3] / 2);
+        line.forEach((it, i) => (it[0] += (left * i) / (line.length - 1)));
+      } else {
+        line[0][0] = (lo + hi) / 2;
+      }
+      line.forEach(([x, text, size], i) =>
+        placed.push({ x, y, text, size, edge: i === 0 || i === line.length - 1 })
+      );
+    }
+  }
+
+  const wine = [0.58, 0.0, 0.09], crimson = [0.90, 0.05, 0.14], blood = [0.98, 0.10, 0.16];
+  for (const p of placed) {
+    const rad = Math.min(1, mathDist(p.x, p.y));
+    let base = mix(wine, crimson, 0.25 + 0.75 * rad);
+    base = mix(base, blood, uniform(0, 0.35) + (p.edge ? 0.3 : 0));
+    p.color = base.map((v) => Math.min(1, v));
+    p.rad = rad;
+  }
+  const edges = placed.filter((p) => p.edge);
+  const inner = placed.filter((p) => !p.edge);
+  const TAU = 2 * Math.PI;
+  const ang = (p) => ((Math.atan2(p.x, p.y - CY) % TAU) + TAU) % TAU;
+  edges.sort((a, b) => ang(a) - ang(b));
+  inner.forEach((p) => (p.key = -p.rad + uniform(0, 0.08)));
+  inner.sort((a, b) => a.key - b.key);
+  return edges.concat(inner);
+}
+
+// ============ MENGGAMBAR ============
+function drawText(c, x, y, str, size, color) {
+  c.font = `bold ${size * PT}px ${FONT}`;
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillStyle = color;
+  c.fillText(str, x, -y);   // y hati naik ke atas, canvas turun ke bawah
+}
+function drawStatic(c, p) {
+  drawText(c, p.x + 2, p.y - 3, p.text, p.size, hx(dim(p.color, 0.30)));
+  drawText(c, p.x, p.y, p.text, p.size + 1, hx(dim(p.color, 0.20)));
+  drawText(c, p.x, p.y, p.text, p.size, hx(p.color));
+}
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  for (const c of [cv, buf]) { c.width = W * dpr; c.height = H * dpr; }
+  k = Math.min(W / 720, H / 760);
+  for (const c of [ctx, bctx]) {
+    c.setTransform(dpr * k, 0, 0, dpr * k, (dpr * W) / 2, (dpr * H) / 2);
+  }
+  finished.forEach((p) => drawStatic(bctx, p));
+}
+
+// ============ ANIMASI ============
+const ORDER = build();
+const finished = [], active = [];
+let idx = 0, acc = 0, spawning = true;
+const RATE = ORDER.length / ((DURATION * 1000) / TICK);
+
+function spawn(p) {
+  p.f = 0;
+  p.dx = uniform(-10, 10);
+  p.cs = BGC; p.ch = BGC; p.cm = BGC;
+  p.px = p.x + p.dx;
+  p.py = p.y + LIFT;
+  active.push(p);
+}
+
+function advance(p) {
+  p.f++;
+  const u = clamp(p.f / ANIM);
+  const e = 1 - (1 - u) ** 3;
+  p.px = p.x + p.dx * (1 - e);
+  p.py = p.y + (1 - e) * LIFT;
+  p.cs = mix(BGC, dim(p.color, 0.30), e);
+  p.ch = mix(BGC, dim(p.color, 0.20), e * e);
+  const flash = 0.75 * Math.sin(Math.PI * clamp((u - 0.55) / 0.45));
+  p.cm = mix(mix(BGC, p.color, e ** 1.5), FLASH, flash);
+  return u < 1;
+}
+
+function tick() {
+  if (spawning) {
+    acc += RATE;
+    while (acc >= 1 && idx < ORDER.length) { acc -= 1; spawn(ORDER[idx++]); }
+    if (idx >= ORDER.length) spawning = false;
+  }
+  for (let i = active.length - 1; i >= 0; i--) {
+    if (!advance(active[i])) {
+      const p = active.splice(i, 1)[0];
+      finished.push(p);
+      drawStatic(bctx, p);
+    }
+  }
+}
+
+// ============ KILAU ACAK (setelah semua muncul) ============
+const shimmers = [];
+let nextShimmer = 0;
+
+function render(now) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(buf, 0, 0);
+  ctx.restore();
+
+  for (const p of active) {
+    drawText(ctx, p.x + 2, p.y - 3, p.text, p.size, hx(p.cs));
+    drawText(ctx, p.px, p.py, p.text, p.size + 1, hx(p.ch));
+    drawText(ctx, p.px, p.py, p.text, p.size, hx(p.cm));
+  }
+  for (let i = shimmers.length - 1; i >= 0; i--) {
+    if (now > shimmers[i].until) { shimmers.splice(i, 1); continue; }
+    const p = shimmers[i].p;
+    drawText(ctx, p.x, p.y, p.text, p.size, hx(mix(p.color, FLASH, 0.6)));
+  }
+}
+
+let last = null, lag = 0;
+function frame(now) {
+  if (last === null) last = now;
+  lag = Math.min(lag + (now - last), 200);
+  last = now;
+  while (lag >= TICK) { tick(); lag -= TICK; }
+
+  if (!spawning && !active.length && now >= nextShimmer) {
+    shimmers.push({ p: choice(ORDER), until: now + 260 });
+    nextShimmer = now + 140;
+  }
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+// ============ TOMBOL MULAI & MUTE ============
+document.getElementById("btn").addEventListener("click", () => {
+  audio.currentTime = 0;
+  audio.volume = 0.8;
+  audio.play().catch(() => {});      // harus langsung di dalam event klik
+  startEl.classList.add("hide");
+  muteBtn.classList.add("show");
+  last = null;                        // reset jam animasi supaya mulai dari nol
+  requestAnimationFrame(frame);
+});
+
+muteBtn.addEventListener("click", () => {
+  audio.muted = !audio.muted;
+  muteBtn.textContent = audio.muted ? "🔇" : "🔊";
+});
+
+window.addEventListener("resize", resize);
+resize();
+</script>
+</body>
+</html>
